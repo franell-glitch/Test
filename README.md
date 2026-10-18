@@ -40,6 +40,24 @@ Die Daten liegen in `data/zeiterfassung.db` (regelmäßig sichern!).
 
 Browser geben die Kamera nur auf **`localhost`** oder über **HTTPS** frei. Läuft das Terminal auf einem anderen Gerät (z. B. Tablet am Eingang), muss der Server hinter einem HTTPS-Reverse-Proxy (z. B. Caddy, nginx, Traefik) betrieben werden.
 
+## Installation auf einem Server (z. B. Oracle Cloud „Always Free“)
+
+Auf einem frischen Ubuntu-Server (22.04/24.04, x86 oder ARM) genügt ein Befehl:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/franell-glitch/Test/HEAD/deploy/install.sh | sudo bash
+```
+
+Das Skript [`deploy/install.sh`](deploy/install.sh) installiert Node.js 22 und Caddy, richtet die App als Systemdienst ein, holt automatisch ein HTTPS-Zertifikat, öffnet die Firewall (Ports 80/443) und legt ein tägliches Datenbank-Backup an (`/var/backups/zeiterfassung`, 30 Tage). Am Ende zeigt es die Adresse und das Admin-Passwort an.
+
+- **Ohne eigene Domain** wird automatisch eine kostenlose Adresse der Form `zeit.<server-ip>.sslip.io` verwendet.
+- **Mit eigener Domain:** DNS-A-Eintrag (z. B. `zeit.example.de`) auf die Server-IP setzen und `sudo DOMAIN=zeit.example.de bash` statt `sudo bash` verwenden.
+- **Aktualisieren:** denselben Befehl erneut ausführen – Daten, Passwort und Domain bleiben erhalten.
+- **Bei Oracle zusätzlich:** In der Konsole unter *Networking → Virtual Cloud Networks → (dein VCN) → Subnet → Security List* Ingress-Regeln für TCP 80 und 443 von `0.0.0.0/0` anlegen.
+- Weitere Programme können später auf demselben Server laufen: Jede App bekommt eine eigene Datei in `/etc/caddy/sites/`.
+
+Nützliche Befehle: `sudo systemctl status zeiterfassung`, `sudo journalctl -u zeiterfassung -f`, Passwort ändern in `/etc/zeiterfassung.env` und danach `sudo systemctl restart zeiterfassung`.
+
 ## Erste Schritte
 
 1. `/admin` öffnen und mit dem Admin-Passwort anmelden.

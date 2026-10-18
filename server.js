@@ -26,6 +26,8 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
   const pinFails = new Map(); // IP -> { count, lockedUntil }
   const pinSecret = db.prepare("SELECT value FROM settings WHERE key = 'pin_secret'").get().value;
 
+  // Hinter einem Reverse-Proxy (z. B. Caddy) die echte Client-IP und HTTPS erkennen
+  app.set('trust proxy', 'loopback');
   app.use(express.json({ limit: '1mb' }));
 
   // ---------- Statische Dateien ----------
@@ -118,7 +120,7 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
     sessions.set(token, Date.now() + SESSION_HOURS * 3600 * 1000);
     res.setHeader(
       'Set-Cookie',
-      `admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_HOURS * 3600}`
+      `admin_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_HOURS * 3600}${req.secure ? '; Secure' : ''}`
     );
     res.json({ ok: true });
   });
@@ -419,11 +421,11 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
 }
 
 if (require.main === module) {
-  const dataDir = path.join(__dirname, 'data');
-  fs.mkdirSync(dataDir, { recursive: true });
-  const app = createApp({ dbPath: process.env.DB_PATH || path.join(dataDir, 'zeiterfassung.db') });
+  const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'zeiterfassung.db');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const app = createApp({ dbPath });
   const port = Number(process.env.PORT || 3000);
-  app.listen(port, () => {
+  app.listen(port, process.env.HOST || undefined, () => {
     console.log(`Zeiterfassung läuft auf http://localhost:${port}`);
     console.log(`  Terminal:   http://localhost:${port}/kiosk`);
     console.log(`  Verwaltung: http://localhost:${port}/admin`);
