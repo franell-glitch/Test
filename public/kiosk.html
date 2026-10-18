@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stempel-Terminal</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="kiosk">
+  <main>
+    <p class="clock" id="clock">--:--:--</p>
+    <p class="date" id="date"></p>
+    <div class="camera">
+      <video id="video" muted playsinline></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <p class="status" id="status">Lade Gesichtserkennung …</p>
+    <div class="actions hidden" id="actions">
+      <button class="in" id="btn-in">Kommen</button>
+      <button class="out" id="btn-out">Gehen</button>
+    </div>
+    <p><button id="btn-cancel" class="hidden">Abbrechen</button></p>
+    <p class="muted" id="countdown"></p>
+  </main>
+  <script src="/vendor/face-api.js"></script>
+  <script src="/js/face.js"></script>
+  <script src="/js/kiosk.js"></script>
+</body>
+</html>

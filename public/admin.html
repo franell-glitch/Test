@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verwaltung – Zeiterfassung</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Verwaltung</h1>
+    <nav id="nav" class="hidden">
+      <button class="tab active" data-tab="users">Mitarbeiter</button>
+      <button class="tab" data-tab="report">Auswertung</button>
+      <button id="btn-logout">Abmelden</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Anmeldung -->
+    <section id="login" class="card hidden" style="max-width:380px;margin:40px auto">
+      <h2>Anmelden</h2>
+      <form id="login-form" class="row">
+        <label style="flex:1">Admin-Passwort
+          <input type="password" id="login-password" autocomplete="current-password" required>
+        </label>
+        <button class="primary" type="submit">Anmelden</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </section>
+
+    <!-- Mitarbeiter -->
+    <section id="tab-users" class="hidden">
+      <div class="card">
+        <h2>Neuen Mitarbeiter anlegen</h2>
+        <form id="user-form" class="row">
+          <label style="flex:2">Name
+            <input id="user-name" required placeholder="Vor- und Nachname">
+          </label>
+          <label style="flex:1">Personalnummer (optional)
+            <input id="user-pno">
+          </label>
+          <button class="primary" type="submit">Anlegen</button>
+        </form>
+        <p class="error" id="user-error"></p>
+      </div>
+      <div class="card">
+        <h2>Mitarbeiter</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Pers.-Nr.</th><th>Gesichter</th><th>Status</th><th>Aktiv</th><th></th></tr></thead>
+            <tbody id="users-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auswertung -->
+    <section id="tab-report" class="hidden">
+      <div class="card">
+        <h2>Auswertung</h2>
+        <form id="report-form" class="row">
+          <label>Mitarbeiter
+            <select id="report-user"><option value="">Alle</option></select>
+          </label>
+          <label>Von <input type="date" id="report-from" required></label>
+          <label>Bis <input type="date" id="report-to" required></label>
+          <button class="primary" type="submit">Anzeigen</button>
+          <button type="button" id="btn-csv">CSV-Export</button>
+          <button type="button" id="btn-add-entry">Buchung hinzufügen</button>
+        </form>
+      </div>
+      <div id="report-output"></div>
+    </section>
+  </main>
+
+  <!-- Dialog: Gesichter erfassen -->
+  <dialog id="face-dialog">
+    <h2 id="face-title" style="margin-top:0">Gesichter</h2>
+    <p class="muted">Erfassen Sie 3–5 Aufnahmen mit leicht unterschiedlicher Kopfhaltung und Beleuchtung. Das verbessert die Erkennung deutlich.</p>
+    <div class="camera">
+      <video id="enroll-video" muted playsinline></video>
+      <canvas id="enroll-overlay"></canvas>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="btn-capture" disabled>Aufnahme speichern</button>
+      <label class="btn" style="flex-direction:row;color:var(--text)">Foto hochladen
+        <input type="file" id="face-upload" accept="image/*" class="hidden">
+      </label>
+      <button id="btn-face-close" style="margin-left:auto">Schließen</button>
+    </div>
+    <p id="face-status" class="muted"></p>
+    <div class="faces" id="faces"></div>
+  </dialog>
+
+  <!-- Dialog: Buchung bearbeiten -->
+  <dialog id="entry-dialog">
+    <h2 id="entry-title" style="margin-top:0">Buchung</h2>
+    <form id="entry-form">
+      <div class="row">
+        <label id="entry-user-label">Mitarbeiter
+          <select id="entry-user"></select>
+        </label>
+        <label>Beginn <input type="datetime-local" id="entry-start" required></label>
+        <label>Ende <input type="datetime-local" id="entry-end"></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label style="flex:1">Notiz <input id="entry-note" placeholder="z. B. Grund der Korrektur"></label>
+      </div>
+      <p class="error" id="entry-error"></p>
+      <div class="row">
+        <button class="primary" type="submit">Speichern</button>
+        <button type="button" class="danger" id="btn-entry-delete">Löschen</button>
+        <button type="button" id="btn-entry-cancel" style="margin-left:auto">Abbrechen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/vendor/face-api.js"></script>
+  <script src="/js/face.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
