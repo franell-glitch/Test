@@ -51,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/franell-glitch/Test/HEAD/deploy/ins
 Das Skript [`deploy/install.sh`](deploy/install.sh) installiert Node.js 22 und Caddy, richtet die App als Systemdienst ein, holt automatisch ein HTTPS-Zertifikat, öffnet die Firewall (Ports 80/443) und legt ein tägliches Datenbank-Backup an (`/var/backups/zeiterfassung`, 30 Tage). Am Ende zeigt es die Adresse und das Admin-Passwort an.
 
 - **Ohne eigene Domain** wird automatisch eine kostenlose Adresse der Form `zeit.<server-ip>.sslip.io` verwendet.
+- **Ganz ohne Terminal (Oracle):** Beim Erstellen der Instanz unter *Show advanced options → Management → Paste cloud-init script* den Inhalt von [`deploy/oracle-startskript.sh`](deploy/oracle-startskript.sh) einfügen (vorher Passwort eintragen). Der Server richtet sich beim ersten Start selbst ein; Protokoll in `/var/log/zeiterfassung-install.log`.
 - **Mit eigener Domain:** DNS-A-Eintrag (z. B. `zeit.example.de`) auf die Server-IP setzen und `sudo DOMAIN=zeit.example.de bash` statt `sudo bash` verwenden.
 - **Aktualisieren:** denselben Befehl erneut ausführen – Daten, Passwort und Domain bleiben erhalten.
 - **Bei Oracle zusätzlich:** In der Konsole unter *Networking → Virtual Cloud Networks → (dein VCN) → Subnet → Security List* Ingress-Regeln für TCP 80 und 443 von `0.0.0.0/0` anlegen.

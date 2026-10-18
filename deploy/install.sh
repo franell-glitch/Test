@@ -7,6 +7,8 @@
 # Mit eigener Domain (DNS-A-Eintrag muss auf die Server-IP zeigen):
 #   curl -fsSL .../install.sh | sudo DOMAIN=zeit.example.de bash
 #
+# Als Oracle-Startskript (Cloud-Init) siehe deploy/oracle-startskript.sh.
+#
 # Erneutes Ausführen aktualisiert die App auf den neuesten Stand; Daten und Passwort bleiben erhalten.
 set -euo pipefail
 
@@ -28,6 +30,13 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 export DEBIAN_FRONTEND=noninteractive
+# Beim ersten Systemstart laufen oft noch automatische Updates – dann auf die apt-Sperre warten
+apt-get() { command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+for _ in $(seq 120); do
+  pgrep -x 'apt|apt-get|dpkg|unattended-upgr' >/dev/null || break
+  echo "Warte auf laufende System-Updates …"
+  sleep 5
+done
 
 log "Systempakete installieren"
 apt-get update -q
@@ -69,7 +78,7 @@ npm ci --omit=dev --no-audit --no-fund
 
 if [ ! -f $ENV_FILE ]; then
   log "Konfiguration anlegen"
-  ADMIN_PASSWORD="$(node -e "process.stdout.write(require('crypto').randomBytes(12).toString('base64url'))")"
+  ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(node -e "process.stdout.write(require('crypto').randomBytes(12).toString('base64url'))")}"
   cat > $ENV_FILE <<EOF
 ADMIN_PASSWORD=$ADMIN_PASSWORD
 HOST=127.0.0.1
