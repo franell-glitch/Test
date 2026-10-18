@@ -16,7 +16,7 @@ const AUTO_CONFIRM_SECONDS = 5;
 const MIN_FACE_WIDTH = 110; // Pixel – Personen im Hintergrund werden ignoriert
 const RESULT_DISPLAY_MS = 4000;
 
-let state = 'scanning'; // scanning | confirm | busy
+let state = 'scanning'; // scanning | pin | confirm | busy
 let current = null; // Ergebnis von /identify
 let countdownTimer = null;
 let lastUnknownAt = 0;
@@ -110,6 +110,63 @@ btnCancel.onclick = () => {
   resetToScanning(1500);
 };
 
+// ---------- PIN-Eingabe als Alternative zur Gesichtserkennung ----------
+const pinDialog = $('pin-dialog');
+let pin = '';
+
+function renderPin() {
+  $('pin-display').innerHTML = pin ? '•'.repeat(pin.length) : '&nbsp;';
+}
+
+$('btn-pin').onclick = () => {
+  if (state !== 'scanning') return;
+  state = 'pin';
+  pin = '';
+  renderPin();
+  $('pin-error').innerHTML = '&nbsp;';
+  pinDialog.showModal();
+};
+
+async function submitPin() {
+  if (pin.length < 4) {
+    $('pin-error').textContent = 'Mindestens 4 Ziffern';
+    return;
+  }
+  try {
+    const result = await api('/api/kiosk/identify-pin', { pin });
+    pinDialog.close('ok');
+    showConfirm(result);
+  } catch (e) {
+    pin = '';
+    renderPin();
+    $('pin-error').textContent = e.message;
+  }
+}
+
+function pinKey(key) {
+  if (key === 'del') pin = pin.slice(0, -1);
+  else if (key === 'ok') return submitPin();
+  else if (/^\d$/.test(key) && pin.length < 8) pin += key;
+  renderPin();
+}
+
+$('pin-pad').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-key]');
+  if (btn) pinKey(btn.dataset.key);
+});
+pinDialog.addEventListener('keydown', (e) => {
+  if (/^\d$/.test(e.key)) pinKey(e.key);
+  else if (e.key === 'Backspace') pinKey('del');
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    pinKey('ok');
+  }
+});
+$('pin-close').onclick = () => pinDialog.close();
+pinDialog.addEventListener('close', () => {
+  if (state === 'pin') resetToScanning();
+});
+
 async function scanLoop() {
   if (state === 'scanning' && video.readyState >= 2) {
     try {
@@ -149,6 +206,6 @@ async function scanLoop() {
     setStatus('Bitte in die Kamera schauen');
     scanLoop();
   } catch (e) {
-    setStatus(e.message || 'Kamera konnte nicht gestartet werden', 'err');
+    setStatus((e.message || 'Kamera konnte nicht gestartet werden') + ' – Stempeln per PIN ist weiterhin möglich.', 'err');
   }
 })();

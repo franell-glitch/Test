@@ -14,12 +14,17 @@ const STAMP_COOLDOWN_SECONDS = Number(process.env.STAMP_COOLDOWN_SECONDS || 60);
 // Offene Buchungen, die älter sind, gelten als "Ausstempeln vergessen"
 const MAX_OPEN_HOURS = Number(process.env.MAX_OPEN_HOURS || 16);
 const SESSION_HOURS = 12;
+// Schutz gegen Durchprobieren von PINs am Terminal
+const PIN_MAX_FAILS = 5;
+const PIN_LOCK_MINUTES = 5;
 
 function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
   const db = openDatabase(dbPath);
   const app = express();
   const sessions = new Map(); // token -> Ablaufzeitpunkt
-  const stampTokens = new Map(); // token -> { userId, expires }
+  const stampTokens = new Map(); // token -> { userId, method, expires }
+  const pinFails = new Map(); // IP -> { count, lockedUntil }
+  const pinSecret = db.prepare("SELECT value FROM settings WHERE key = 'pin_secret'").get().value;
 
   app.use(express.json({ limit: '1mb' }));
 
@@ -53,6 +58,27 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
     const ha = crypto.createHash('sha256').update(String(a)).digest();
     const hb = crypto.createHash('sha256').update(String(b)).digest();
     return crypto.timingSafeEqual(ha, hb);
+  }
+
+  function uniqueError(e) {
+    return String(e.message).includes('pin_hash')
+      ? 'Diese PIN ist bereits vergeben – bitte eine andere wählen'
+      : 'Personalnummer ist bereits vergeben';
+  }
+
+  function isValidPin(pin) {
+    return typeof pin === 'string' && /^\d{4,8}$/.test(pin);
+  }
+
+  // Deterministischer Hash, damit eine PIN eindeutig einer Person zugeordnet werden kann
+  function hashPin(pin) {
+    return crypto.scryptSync(pin, pinSecret, 32).toString('hex');
+  }
+
+  function publicUser(u) {
+    if (!u) return u;
+    const { pin_hash, ...rest } = u;
+    return { ...rest, active: !!u.active, has_pin: !!pin_hash };
   }
 
   function isIsoDate(v) {
@@ -114,23 +140,23 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
          FROM users u ORDER BY u.name COLLATE NOCASE`
       )
       .all()
-      .map((u) => ({ ...u, active: !!u.active, ...userStatus(u.id) }));
+      .map((u) => ({ ...publicUser(u), ...userStatus(u.id) }));
     res.json(users);
   });
 
   app.post('/api/admin/users', requireAdmin, (req, res) => {
     const name = String(req.body?.name || '').trim();
     const personnelNo = String(req.body?.personnel_no || '').trim() || null;
+    const pin = req.body?.pin ? String(req.body.pin) : null;
     if (!name) return res.status(400).json({ error: 'Name ist erforderlich' });
+    if (pin && !isValidPin(pin)) return res.status(400).json({ error: 'Die PIN muss aus 4 bis 8 Ziffern bestehen' });
     try {
       const r = db
-        .prepare('INSERT INTO users (name, personnel_no, active, created_at) VALUES (?, ?, 1, ?)')
-        .run(name, personnelNo, new Date().toISOString());
-      res.status(201).json(q.userById.get(r.lastInsertRowid));
+        .prepare('INSERT INTO users (name, personnel_no, pin_hash, active, created_at) VALUES (?, ?, ?, 1, ?)')
+        .run(name, personnelNo, pin ? hashPin(pin) : null, new Date().toISOString());
+      res.status(201).json(publicUser(q.userById.get(r.lastInsertRowid)));
     } catch (e) {
-      if (String(e.message).includes('UNIQUE')) {
-        return res.status(409).json({ error: 'Personalnummer ist bereits vergeben' });
-      }
+      if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: uniqueError(e) });
       throw e;
     }
   });
@@ -151,12 +177,25 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
         user.id
       );
     } catch (e) {
-      if (String(e.message).includes('UNIQUE')) {
-        return res.status(409).json({ error: 'Personalnummer ist bereits vergeben' });
-      }
+      if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: uniqueError(e) });
       throw e;
     }
-    res.json(q.userById.get(user.id));
+    res.json(publicUser(q.userById.get(user.id)));
+  });
+
+  // PIN setzen oder (mit leerer PIN) entfernen
+  app.put('/api/admin/users/:id/pin', requireAdmin, (req, res) => {
+    const user = q.userById.get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    const pin = req.body?.pin ? String(req.body.pin) : null;
+    if (pin && !isValidPin(pin)) return res.status(400).json({ error: 'Die PIN muss aus 4 bis 8 Ziffern bestehen' });
+    try {
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(pin ? hashPin(pin) : null, user.id);
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: uniqueError(e) });
+      throw e;
+    }
+    res.json(publicUser(q.userById.get(user.id)));
   });
 
   app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
@@ -284,21 +323,48 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
     const match = findBestMatch(descriptor, candidates, FACE_THRESHOLD);
     if (!match) return res.json({ recognized: false });
 
-    const user = q.userById.get(match.userId);
+    res.json(identification(q.userById.get(match.userId), 'face'));
+  });
+
+  app.post('/api/kiosk/identify-pin', (req, res) => {
+    const ip = req.ip;
+    const fails = pinFails.get(ip);
+    if (fails?.lockedUntil > Date.now()) {
+      const minutes = Math.ceil((fails.lockedUntil - Date.now()) / 60000);
+      return res.status(429).json({ error: `Zu viele falsche Eingaben. Bitte in ${minutes} Min. erneut versuchen.` });
+    }
+    const pin = String(req.body?.pin || '');
+    const user = isValidPin(pin) ? db.prepare('SELECT * FROM users WHERE pin_hash = ? AND active = 1').get(hashPin(pin)) : null;
+    if (!user) {
+      // Fehlversuche verfallen nach der Sperrdauer; nach PIN_MAX_FAILS wird gesperrt
+      const window = PIN_LOCK_MINUTES * 60000;
+      const recent = fails && Date.now() - fails.lastFail < window ? fails.count : 0;
+      const count = recent + 1;
+      pinFails.set(ip, {
+        count: count >= PIN_MAX_FAILS ? 0 : count,
+        lastFail: Date.now(),
+        lockedUntil: count >= PIN_MAX_FAILS ? Date.now() + window : 0,
+      });
+      return res.status(401).json({ error: 'PIN unbekannt' });
+    }
+    pinFails.delete(ip);
+    res.json(identification(user, 'pin'));
+  });
+
+  // Erkannte Person + einmaliges, kurzlebiges Token für die anschließende Buchung
+  function identification(user, method) {
     const status = userStatus(user.id);
     const token = crypto.randomBytes(24).toString('hex');
-    stampTokens.set(token, { userId: user.id, expires: Date.now() + 30 * 1000 });
+    stampTokens.set(token, { userId: user.id, method, expires: Date.now() + 30 * 1000 });
     for (const [t, v] of stampTokens) if (v.expires < Date.now()) stampTokens.delete(t);
-
-    res.json({
+    return {
       recognized: true,
       user: { id: user.id, name: user.name },
-      distance: Number(match.distance.toFixed(3)),
       ...status,
       suggestedAction: status.clockedIn ? 'out' : 'in',
       token,
-    });
-  });
+    };
+  }
 
   app.post('/api/kiosk/stamp', (req, res) => {
     const { token, action } = req.body || {};
@@ -324,14 +390,16 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
     const open = openEntryFor(user.id, now);
     if (action === 'in') {
       if (open) return res.status(409).json({ error: 'Sie sind bereits eingestempelt' });
-      db.prepare("INSERT INTO time_entries (user_id, start_time, start_method) VALUES (?, ?, 'face')").run(
+      db.prepare('INSERT INTO time_entries (user_id, start_time, start_method) VALUES (?, ?, ?)').run(
         user.id,
-        now.toISOString()
+        now.toISOString(),
+        t.method
       );
     } else {
       if (!open) return res.status(409).json({ error: 'Sie sind nicht eingestempelt' });
-      db.prepare("UPDATE time_entries SET end_time = ?, end_method = 'face' WHERE id = ?").run(
+      db.prepare('UPDATE time_entries SET end_time = ?, end_method = ? WHERE id = ?').run(
         now.toISOString(),
+        t.method,
         open.id
       );
     }

@@ -92,16 +92,18 @@ async function loadUsers() {
         <td>${esc(u.name)}</td>
         <td>${esc(u.personnel_no || '–')}</td>
         <td>${u.face_count ? u.face_count : '<span class="badge warn">keine</span>'}</td>
+        <td>${u.has_pin ? 'gesetzt' : '<span class="muted">–</span>'}</td>
         <td>${u.clockedIn ? `<span class="badge in">anwesend seit ${fmtTime(u.since)}</span>` : '<span class="badge out">abwesend</span>'}</td>
         <td><input type="checkbox" data-act="active" data-id="${u.id}" ${u.active ? 'checked' : ''}></td>
         <td>
           <button class="small primary" data-act="faces" data-id="${u.id}">Gesichter</button>
+          <button class="small" data-act="pin" data-id="${u.id}">PIN</button>
           <button class="small" data-act="edit" data-id="${u.id}">Bearbeiten</button>
           <button class="small danger" data-act="delete" data-id="${u.id}">Löschen</button>
         </td></tr>`
         )
         .join('')
-    : '<tr><td colspan="6" class="muted">Noch keine Mitarbeiter angelegt.</td></tr>';
+    : '<tr><td colspan="7" class="muted">Noch keine Mitarbeiter angelegt.</td></tr>';
 
   const sel = $('report-user');
   const prev = sel.value;
@@ -116,7 +118,7 @@ $('user-form').onsubmit = async (e) => {
   try {
     const user = await api('/api/admin/users', {
       method: 'POST',
-      body: { name: $('user-name').value, personnel_no: $('user-pno').value },
+      body: { name: $('user-name').value, personnel_no: $('user-pno').value, pin: $('user-pin').value },
     });
     $('user-form').reset();
     await loadUsers();
@@ -134,6 +136,15 @@ $('users-body').addEventListener('click', async (e) => {
   try {
     if (btn.dataset.act === 'faces') {
       openFaceDialog(user.id);
+    } else if (btn.dataset.act === 'pin') {
+      const pin = prompt(
+        `Neue PIN für „${user.name}“ (4–8 Ziffern).${user.has_pin ? '\nLeer lassen, um die PIN zu entfernen.' : ''}`,
+        ''
+      );
+      if (pin === null) return;
+      if (!pin && !confirm('PIN wirklich entfernen?')) return;
+      await api(`/api/admin/users/${user.id}/pin`, { method: 'PUT', body: { pin: pin.trim() } });
+      await loadUsers();
     } else if (btn.dataset.act === 'edit') {
       const name = prompt('Name', user.name);
       if (name === null) return;
@@ -293,7 +304,10 @@ function entryDuration(e) {
   return 0;
 }
 
-const methodLabel = (m) => (m === 'face' ? 'Gesicht' : m === 'manual' ? 'manuell' : '');
+const METHOD_LABELS = { face: 'Gesicht', pin: 'PIN', manual: 'manuell' };
+const methodLabel = (m) => METHOD_LABELS[m] || '';
+const entryMethods = (e) =>
+  [methodLabel(e.start_method), e.end_time ? methodLabel(e.end_method) : ''].filter(Boolean).join(' / ');
 
 async function loadReport() {
   const { from, to } = reportRange();
@@ -339,15 +353,12 @@ function renderReport() {
         if (e.end_time) end = fmtTime(e.end_time);
         else if (e.missing_end) end = '<span class="badge warn">Ausstempeln fehlt</span>';
         else end = '<span class="badge in">läuft</span>';
-        const methods = [methodLabel(e.start_method), e.end_time ? methodLabel(e.end_method) : '']
-          .filter(Boolean)
-          .join(' / ');
         rows.push(`<tr>
           <td>${i === 0 ? fmtDate(new Date(key + 'T00:00')) : ''}</td>
           <td>${fmtTime(e.start_time)}</td>
           <td>${end}</td>
           <td class="num">${e.missing_end ? '–' : fmtDuration(dur)}</td>
-          <td class="muted">${esc(methods)}</td>
+          <td class="muted">${esc(entryMethods(e))}</td>
           <td class="muted">${esc(e.note || '')}</td>
           <td><button class="small" data-entry="${e.id}">Bearbeiten</button></td>
         </tr>`);
@@ -374,7 +385,7 @@ $('report-user').onchange = loadReport;
 
 $('btn-csv').onclick = () => {
   const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = [['Personalnummer', 'Name', 'Datum', 'Beginn', 'Ende', 'Dauer (h:mm)', 'Dauer (Std.)', 'Notiz']];
+  const lines = [['Personalnummer', 'Name', 'Datum', 'Beginn', 'Ende', 'Dauer (h:mm)', 'Dauer (Std.)', 'Erfassung', 'Notiz']];
   for (const e of lastReport) {
     const dur = e.missing_end ? 0 : entryDuration(e);
     lines.push([
@@ -385,6 +396,7 @@ $('btn-csv').onclick = () => {
       e.end_time ? fmtTime(e.end_time) : e.missing_end ? 'fehlt' : 'läuft',
       e.missing_end ? '' : fmtDuration(dur),
       e.missing_end ? '' : (dur / 3600000).toFixed(2).replace('.', ','),
+      entryMethods(e),
       e.note || '',
     ]);
   }

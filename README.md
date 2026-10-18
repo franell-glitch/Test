@@ -1,13 +1,13 @@
 # Zeiterfassung mit Gesichtserkennung
 
-Webanwendung zur Arbeitszeiterfassung: Mitarbeiter stempeln sich an einem Terminal per Gesichtserkennung ein und aus, die Verwaltung pflegt Mitarbeiter und Gesichter und wertet die Zeiten aus.
+Webanwendung zur Arbeitszeiterfassung: Mitarbeiter stempeln sich an einem Terminal per Gesichtserkennung (alternativ per PIN) ein und aus, die Verwaltung pflegt Mitarbeiter und Gesichter und wertet die Zeiten aus.
 
 ## Bereiche
 
 | Bereich | URL | Zweck |
 |---|---|---|
-| Stempel-Terminal | `/kiosk` | Mitarbeiter schauen in die Kamera → werden erkannt → **Kommen** / **Gehen**. Die passende Aktion ist vorausgewählt und wird nach 5 Sekunden automatisch gebucht. |
-| Verwaltung | `/admin` | Mitarbeiter anlegen, bearbeiten, deaktivieren, löschen; Gesichter per Webcam oder Foto erfassen. |
+| Stempel-Terminal | `/kiosk` | Mitarbeiter schauen in die Kamera → werden erkannt → **Kommen** / **Gehen**. Die passende Aktion ist vorausgewählt und wird nach 5 Sekunden automatisch gebucht. Alternativ: **Mit PIN stempeln**. |
+| Verwaltung | `/admin` | Mitarbeiter anlegen, bearbeiten, deaktivieren, löschen; Gesichter per Webcam oder Foto erfassen; PIN vergeben. |
 | Auswertung | `/admin` → Tab „Auswertung“ | Pro Mitarbeiter und Tag alle Beginn- und Endzeiten mit Dauer, Tages- und Gesamtsummen; Buchungen korrigieren/ergänzen; CSV-Export (Excel-kompatibel). |
 
 Typischer Tagesablauf: morgens **Kommen**, mittags **Gehen** (Pause), nachmittags **Kommen**, abends **Gehen** – daraus entstehen zwei Zeitblöcke pro Tag. Beliebig viele Blöcke pro Tag sind möglich.
@@ -45,17 +45,20 @@ Browser geben die Kamera nur auf **`localhost`** oder über **HTTPS** frei. Läu
 1. `/admin` öffnen und mit dem Admin-Passwort anmelden.
 2. Mitarbeiter anlegen – der Dialog zur Gesichtserfassung öffnet sich automatisch.
 3. 3–5 Aufnahmen speichern (leicht unterschiedliche Kopfhaltung/Licht). Alternativ Fotos hochladen.
-4. `/kiosk` auf dem Terminal-Gerät öffnen (am besten im Vollbild-/Kiosk-Modus des Browsers).
+4. Optional eine PIN vergeben (Button „PIN“) – für Mitarbeiter ohne Gesichtsdaten oder wenn die Erkennung einmal nicht klappt.
+5. `/kiosk` auf dem Terminal-Gerät öffnen (am besten im Vollbild-/Kiosk-Modus des Browsers).
 
 ## Technik
 
 - **Backend:** Node.js, Express, SQLite (`node:sqlite`)
 - **Gesichtserkennung:** [face-api.js](https://github.com/vladmandic/face-api) läuft vollständig im Browser. Aus jedem Gesicht wird ein 128-stelliger Merkmalsvektor berechnet; der Server vergleicht ihn mit den gespeicherten Vektoren (euklidischer Abstand). Die Modelle werden lokal ausgeliefert – keine Cloud, keine externen Dienste.
 - Gespeichert werden pro Aufnahme der Merkmalsvektor und ein kleines Vorschaubild.
+- **PIN:** 4–8 Ziffern, je Mitarbeiter eindeutig, nur als Hash (scrypt mit geheimem Schlüssel der Installation) gespeichert. Nach 5 falschen Eingaben ist die PIN-Eingabe am Gerät für 5 Minuten gesperrt.
+- **CSV-Export:** Semikolon-getrennt, UTF-8 mit BOM (öffnet direkt in Excel). Spalten: Personalnummer, Name, Datum, Beginn, Ende, Dauer (h:mm), Dauer (Std.), Erfassung (Gesicht/PIN/manuell), Notiz.
 - Tests: `npm test`
 
 ## Wichtige Hinweise
 
-- **Datenschutz (DSGVO):** Gesichtsmerkmale sind biometrische Daten (Art. 9 DSGVO). Für den Einsatz braucht es in der Regel eine Rechtsgrundlage (z. B. freiwillige, schriftliche Einwilligung der Mitarbeiter mit Alternative wie PIN/Karte), ggf. eine Datenschutz-Folgenabschätzung und – falls vorhanden – die Beteiligung des Betriebsrats. Bitte vor dem Produktiveinsatz rechtlich prüfen lassen.
+- **Datenschutz (DSGVO):** Gesichtsmerkmale sind biometrische Daten (Art. 9 DSGVO). Für den Einsatz braucht es in der Regel eine Rechtsgrundlage (z. B. freiwillige, schriftliche Einwilligung der Mitarbeiter – wer nicht einwilligt, nutzt die PIN), ggf. eine Datenschutz-Folgenabschätzung und – falls vorhanden – die Beteiligung des Betriebsrats. Bitte vor dem Produktiveinsatz rechtlich prüfen lassen.
 - **Kein Fälschungsschutz:** Es gibt keine Lebenderkennung; ein vorgehaltenes Foto kann unter Umständen erkannt werden. Für ein Terminal unter Aufsicht meist ausreichend, für höhere Anforderungen nicht.
 - Vergessene Ausstempelungen werden in der Auswertung markiert und können dort korrigiert werden. Manuelle Änderungen sind als „manuell“ gekennzeichnet.

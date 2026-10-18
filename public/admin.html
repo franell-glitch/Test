@@ -40,6 +40,9 @@
           <label style="flex:1">Personalnummer (optional)
             <input id="user-pno">
           </label>
+          <label style="flex:1">PIN (optional, 4–8 Ziffern)
+            <input id="user-pin" inputmode="numeric" pattern="\d{4,8}" autocomplete="off">
+          </label>
           <button class="primary" type="submit">Anlegen</button>
         </form>
         <p class="error" id="user-error"></p>
@@ -48,7 +51,7 @@
         <h2>Mitarbeiter</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Pers.-Nr.</th><th>Gesichter</th><th>Status</th><th>Aktiv</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Pers.-Nr.</th><th>Gesichter</th><th>PIN</th><th>Status</th><th>Aktiv</th><th></th></tr></thead>
             <tbody id="users-body"></tbody>
           </table>
         </div>

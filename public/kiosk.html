@@ -21,7 +21,22 @@
     </div>
     <p><button id="btn-cancel" class="hidden">Abbrechen</button></p>
     <p class="muted" id="countdown"></p>
+    <p><button id="btn-pin" class="pin-open">Mit PIN stempeln</button></p>
   </main>
+
+  <dialog id="pin-dialog" class="pin-dialog">
+    <h2 style="margin-top:0">PIN eingeben</h2>
+    <div class="pin-display" id="pin-display">&nbsp;</div>
+    <p class="error" id="pin-error">&nbsp;</p>
+    <div class="pin-pad" id="pin-pad">
+      <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+      <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+      <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+      <button data-key="del" aria-label="Löschen">⌫</button><button data-key="0">0</button>
+      <button data-key="ok" class="primary">OK</button>
+    </div>
+    <p><button id="pin-close">Abbrechen</button></p>
+  </dialog>
   <script src="/vendor/face-api.js"></script>
   <script src="/js/face.js"></script>
   <script src="/js/kiosk.js"></script>

@@ -111,3 +111,44 @@ test('Vergessenes Ausstempeln wird markiert', async (t) => {
   assert.strictEqual(id.body.suggestedAction, 'in');
   assert.strictEqual(app.locals.db.prepare('SELECT COUNT(*) AS c FROM time_entries').get().c, 1);
 });
+
+test('Stempeln per PIN', async (t) => {
+  const { server, call } = await setup();
+  t.after(() => server.close());
+  await call('POST', '/api/admin/login', { password: 'geheim' });
+
+  assert.strictEqual((await call('POST', '/api/admin/users', { name: 'Dora', pin: '12' })).status, 400);
+  const dora = (await call('POST', '/api/admin/users', { name: 'Dora', pin: '4711' })).body;
+  assert.strictEqual(dora.has_pin, true);
+  assert.strictEqual(dora.pin_hash, undefined);
+  const emil = (await call('POST', '/api/admin/users', { name: 'Emil' })).body;
+
+  // PINs sind eindeutig
+  assert.strictEqual((await call('PUT', `/api/admin/users/${emil.id}/pin`, { pin: '4711' })).status, 409);
+  assert.strictEqual((await call('PUT', `/api/admin/users/${emil.id}/pin`, { pin: '123456' })).status, 200);
+
+  const users = (await call('GET', '/api/admin/users')).body;
+  assert.ok(users.every((u) => u.pin_hash === undefined && u.has_pin === true));
+
+  const id = await call('POST', '/api/kiosk/identify-pin', { pin: '4711' });
+  assert.strictEqual(id.body.user.name, 'Dora');
+  assert.strictEqual((await call('POST', '/api/kiosk/stamp', { token: id.body.token, action: 'in' })).status, 200);
+  const [entry] = (await call('GET', `/api/admin/entries?userId=${dora.id}`)).body;
+  assert.strictEqual(entry.start_method, 'pin');
+
+  // PIN entfernen
+  await call('PUT', `/api/admin/users/${emil.id}/pin`, { pin: '' });
+  assert.strictEqual((await call('POST', '/api/kiosk/identify-pin', { pin: '123456' })).status, 401);
+});
+
+test('PIN-Sperre nach zu vielen Fehlversuchen', async (t) => {
+  const { server, call } = await setup();
+  t.after(() => server.close());
+  await call('POST', '/api/admin/login', { password: 'geheim' });
+  await call('POST', '/api/admin/users', { name: 'Fritz', pin: '9999' });
+  for (let i = 0; i < 5; i++) {
+    assert.strictEqual((await call('POST', '/api/kiosk/identify-pin', { pin: '000' + i })).status, 401);
+  }
+  // Auch die richtige PIN wird während der Sperre abgelehnt
+  assert.strictEqual((await call('POST', '/api/kiosk/identify-pin', { pin: '9999' })).status, 429);
+});

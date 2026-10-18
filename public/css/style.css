@@ -97,3 +97,8 @@ body.kiosk .camera { margin: 0 auto; }
 .actions button.in { background: var(--success); border-color: var(--success); color: #fff; }
 .actions button.out { background: var(--danger); border-color: var(--danger); color: #fff; }
 .actions button.suggested { outline: 4px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 3px; }
+.pin-open { font-size: 1.05rem; padding: 10px 22px; margin-top: 8px; }
+.pin-dialog { width: min(360px, calc(100vw - 32px)); text-align: center; }
+.pin-display { font-size: 2.2rem; letter-spacing: .4em; min-height: 1.4em; font-variant-numeric: tabular-nums; }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pin-pad button { font-size: 1.6rem; padding: 16px 0; border-radius: 12px; }
