@@ -2,10 +2,12 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const crypto = require('node:crypto');
 const express = require('express');
 const { openDatabase } = require('./src/db');
 const { findBestMatch, isValidDescriptor } = require('./src/matching');
+const { createOffsite } = require('./src/offsite');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const FACE_THRESHOLD = Number(process.env.FACE_THRESHOLD || 0.5);
@@ -18,8 +20,14 @@ const SESSION_HOURS = 12;
 const PIN_MAX_FAILS = 5;
 const PIN_LOCK_MINUTES = 5;
 
-function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
+function createApp({ dbPath, adminPassword = ADMIN_PASSWORD, offsiteConfigPath, rcloneBin, graphBase } = {}) {
   const db = openDatabase(dbPath);
+  const offsite = createOffsite({
+    db,
+    configPath: offsiteConfigPath || path.join(path.dirname(dbPath || '.'), 'rclone.conf'),
+    rcloneBin: rcloneBin || process.env.RCLONE_BIN || 'rclone',
+    graphBase,
+  });
   const app = express();
   const sessions = new Map(); // token -> Ablaufzeitpunkt
   const stampTokens = new Map(); // token -> { userId, method, expires }
@@ -315,6 +323,39 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
     res.json({ ok: true });
   });
 
+  // ---------- Admin: Datensicherung ----------
+  // Liefert eine konsistente Kopie der kompletten Datenbank (auch während des laufenden Betriebs)
+  app.get('/api/admin/backup', requireAdmin, (req, res, next) => {
+    const tmpFile = path.join(os.tmpdir(), `zeiterfassung-backup-${crypto.randomBytes(8).toString('hex')}.db`);
+    db.exec(`VACUUM INTO '${tmpFile}'`);
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+    res.download(tmpFile, `zeiterfassung-${stamp}.db`, (err) => {
+      fs.unlink(tmpFile, () => {});
+      if (err && !res.headersSent) next(err);
+    });
+  });
+
+  // Externe Sicherung nach OneDrive
+  const asyncRoute = (fn) => (req, res, next) => fn(req, res).catch(next);
+  app.get('/api/admin/offsite', requireAdmin, (req, res) => res.json(offsite.status()));
+  app.post(
+    '/api/admin/offsite',
+    requireAdmin,
+    asyncRoute(async (req, res) => res.json({ ...(await offsite.configure(req.body?.token)), ...offsite.status() }))
+  );
+  app.delete('/api/admin/offsite', requireAdmin, (req, res) => {
+    offsite.remove();
+    res.json(offsite.status());
+  });
+  app.post(
+    '/api/admin/offsite/run',
+    requireAdmin,
+    asyncRoute(async (req, res) => {
+      await offsite.upload();
+      res.json(offsite.status());
+    })
+  );
+
   // ---------- Terminal (Mitarbeiter-Bereich) ----------
   app.post('/api/kiosk/identify', (req, res) => {
     const { descriptor } = req.body || {};
@@ -412,11 +453,13 @@ function createApp({ dbPath, adminPassword = ADMIN_PASSWORD } = {}) {
   app.use('/api', (req, res) => res.status(404).json({ error: 'Nicht gefunden' }));
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Interner Serverfehler' });
   });
 
   app.locals.db = db;
+  app.locals.offsite = offsite;
   return app;
 }
 
@@ -424,6 +467,7 @@ if (require.main === module) {
   const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'zeiterfassung.db');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const app = createApp({ dbPath });
+  app.locals.offsite.startSchedule();
   const port = Number(process.env.PORT || 3000);
   app.listen(port, process.env.HOST || undefined, () => {
     console.log(`Zeiterfassung läuft auf http://localhost:${port}`);

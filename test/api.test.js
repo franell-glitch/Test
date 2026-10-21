@@ -152,3 +152,115 @@ test('PIN-Sperre nach zu vielen Fehlversuchen', async (t) => {
   // Auch die richtige PIN wird während der Sperre abgelehnt
   assert.strictEqual((await call('POST', '/api/kiosk/identify-pin', { pin: '9999' })).status, 429);
 });
+
+test('Datensicherung herunterladen', async (t) => {
+  const { DatabaseSync } = require('node:sqlite');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { server, call } = await setup();
+  t.after(() => server.close());
+  assert.strictEqual((await call('GET', '/api/admin/users')).status, 401);
+  await call('POST', '/api/admin/login', { password: 'geheim' });
+  await call('POST', '/api/admin/users', { name: 'Gerda', pin: '2580' });
+
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(base + '/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'geheim' }),
+  });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  assert.strictEqual((await fetch(base + '/api/admin/backup')).status, 401);
+  const res = await fetch(base + '/api/admin/backup', { headers: { cookie } });
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /zeiterfassung-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.db/);
+
+  const file = path.join(os.tmpdir(), `test-backup-${process.pid}.db`);
+  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  t.after(() => fs.unlinkSync(file));
+  const copy = new DatabaseSync(file);
+  assert.deepStrictEqual(copy.prepare('SELECT name FROM users').all().map((u) => u.name), ['Gerda']);
+  copy.close();
+});
+
+test('Externe Sicherung nach OneDrive', async (t) => {
+  const http = require('node:http');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { DatabaseSync } = require('node:sqlite');
+
+  // Nachbildung von Microsoft Graph: /me/drive
+  const graph = http.createServer((req, res) => {
+    const ok = req.url === '/me/drive' && req.headers.authorization === 'Bearer gueltig';
+    res.writeHead(ok ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(ok ? { id: 'b!abc123', driveType: 'business', owner: { user: { displayName: 'Chefin' } } } : {}));
+  });
+  graph.listen(0);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'offsite-'));
+  process.env.FAKE_REMOTE_DIR = tmp;
+  t.after(() => {
+    graph.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+    delete process.env.FAKE_RCLONE_FAIL;
+  });
+
+  const { createApp } = require('../server');
+  const app = createApp({
+    dbPath: ':memory:',
+    adminPassword: 'geheim',
+    offsiteConfigPath: path.join(tmp, 'rclone.conf'),
+    rcloneBin: path.join(__dirname, 'fixtures', 'fake-rclone.js'),
+    graphBase: `http://127.0.0.1:${graph.address().port}`,
+  });
+  const server = app.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(base + '/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'geheim' }),
+  });
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const call = async (method, p, body) => {
+    const res = await fetch(base + p, { method, headers: { 'Content-Type': 'application/json', cookie }, body: body && JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+
+  assert.strictEqual((await call('GET', '/api/admin/offsite')).body.configured, false);
+  assert.strictEqual((await call('POST', '/api/admin/offsite/run')).status, 400);
+  assert.strictEqual((await call('POST', '/api/admin/offsite', { token: 'Unsinn' })).status, 400);
+  const expired = '{"access_token":"abgelaufen","refresh_token":"r"}';
+  assert.strictEqual((await call('POST', '/api/admin/offsite', { token: expired })).status, 400);
+
+  // Ausgabe von "rclone authorize" inklusive der Rahmenzeilen einfügen
+  const pasted = 'Paste the following into your remote machine --->\n{"access_token":"gueltig","token_type":"Bearer","refresh_token":"r","expiry":"2030-01-01T00:00:00Z"}\n<---End paste';
+  const conf = await call('POST', '/api/admin/offsite', { token: pasted });
+  assert.strictEqual(conf.status, 200);
+  assert.strictEqual(conf.body.owner, 'Chefin');
+  const confText = fs.readFileSync(path.join(tmp, 'rclone.conf'), 'utf8');
+  assert.match(confText, /drive_id = b!abc123/);
+  assert.match(confText, /drive_type = business/);
+  assert.strictEqual(fs.statSync(path.join(tmp, 'rclone.conf')).mode & 0o777, 0o600);
+
+  await call('POST', '/api/admin/users', { name: 'Hanna' });
+  const run = await call('POST', '/api/admin/offsite/run');
+  assert.strictEqual(run.status, 200);
+  assert.strictEqual(run.body.last.ok, true);
+  const day = new Date().toISOString().slice(0, 10);
+  const uploaded = new DatabaseSync(path.join(tmp, 'Zeiterfassung-Backups', `zeiterfassung-${day}.db`));
+  assert.deepStrictEqual(uploaded.prepare('SELECT name FROM users').all().map((u) => u.name), ['Hanna']);
+  uploaded.close();
+  assert.match(fs.readFileSync(path.join(tmp, 'deletes.log'), 'utf8'), /onedrive:Zeiterfassung-Backups --min-age 90d/);
+
+  // Fehler werden gemeldet und gespeichert
+  process.env.FAKE_RCLONE_FAIL = '1';
+  const failed = await call('POST', '/api/admin/offsite/run');
+  assert.strictEqual(failed.status, 502);
+  assert.match(failed.body.error, /token expired/);
+  const st = (await call('GET', '/api/admin/offsite')).body;
+  assert.strictEqual(st.last.ok, false);
+
+  assert.strictEqual((await call('DELETE', '/api/admin/offsite')).body.configured, false);
+});

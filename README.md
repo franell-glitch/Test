@@ -8,6 +8,7 @@ Webanwendung zur Arbeitszeiterfassung: Mitarbeiter stempeln sich an einem Termin
 |---|---|---|
 | Stempel-Terminal | `/kiosk` | Mitarbeiter schauen in die Kamera → werden erkannt → **Kommen** / **Gehen**. Die passende Aktion ist vorausgewählt und wird nach 5 Sekunden automatisch gebucht. Alternativ: **Mit PIN stempeln**. |
 | Verwaltung | `/admin` | Mitarbeiter anlegen, bearbeiten, deaktivieren, löschen; Gesichter per Webcam oder Foto erfassen; PIN vergeben. |
+| Datensicherung | `/admin` → Tab „Datensicherung“ | Datenbank herunterladen; automatische tägliche Sicherung nach OneDrive einrichten und prüfen. |
 | Auswertung | `/admin` → Tab „Auswertung“ | Pro Mitarbeiter und Tag alle Beginn- und Endzeiten mit Dauer, Tages- und Gesamtsummen; Buchungen korrigieren/ergänzen; CSV-Export (Excel-kompatibel). |
 
 Typischer Tagesablauf: morgens **Kommen**, mittags **Gehen** (Pause), nachmittags **Kommen**, abends **Gehen** – daraus entstehen zwei Zeitblöcke pro Tag. Beliebig viele Blöcke pro Tag sind möglich.
@@ -66,6 +67,18 @@ Nützliche Befehle: `sudo systemctl status zeiterfassung`, `sudo journalctl -u z
 3. 3–5 Aufnahmen speichern (leicht unterschiedliche Kopfhaltung/Licht). Alternativ Fotos hochladen.
 4. Optional eine PIN vergeben (Button „PIN“) – für Mitarbeiter ohne Gesichtsdaten oder wenn die Erkennung einmal nicht klappt.
 5. `/kiosk` auf dem Terminal-Gerät öffnen (am besten im Vollbild-/Kiosk-Modus des Browsers).
+
+## Datensicherung
+
+Oracle sichert die Daten auf dem Server **nicht** automatisch. Es gibt drei Ebenen:
+
+1. **Auf dem Server:** täglich nach `/var/backups/zeiterfassung` (30 Tage) – schützt vor Bedienfehlern, nicht vor Serververlust.
+2. **Download:** Verwaltung → Datensicherung → „Datensicherung herunterladen“ (konsistente Kopie, auch im laufenden Betrieb).
+3. **OneDrive (empfohlen):** Verwaltung → Datensicherung. Einmalig `rclone authorize "onedrive"` auf dem eigenen PC ausführen und das Ergebnis einfügen. Danach lädt die App jede Nacht eine Kopie nach `OneDrive/Zeiterfassung-Backups` (90 Tage Aufbewahrung); Erfolg oder Fehler werden in der Verwaltung angezeigt. Der Zugangsschlüssel liegt nur auf dem Server (`/var/lib/zeiterfassung/rclone.conf`, Rechte 600).
+
+**Wiederherstellen:** Dienst stoppen (`sudo systemctl stop zeiterfassung`), die Sicherungsdatei als `/var/lib/zeiterfassung/zeiterfassung.db` ablegen (vorher `zeiterfassung.db-wal` und `-shm` löschen), `sudo chown zeiterfassung: /var/lib/zeiterfassung/zeiterfassung.db`, Dienst starten.
+
+Hinweis: Die Sicherungen enthalten biometrische Daten – den OneDrive-Ordner nicht freigeben.
 
 ## Technik
 

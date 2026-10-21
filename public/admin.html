@@ -12,6 +12,7 @@
     <nav id="nav" class="hidden">
       <button class="tab active" data-tab="users">Mitarbeiter</button>
       <button class="tab" data-tab="report">Auswertung</button>
+      <button class="tab" data-tab="backup">Datensicherung</button>
       <button id="btn-logout">Abmelden</button>
     </nav>
   </header>
@@ -74,6 +75,34 @@
         </form>
       </div>
       <div id="report-output"></div>
+    </section>
+    <!-- Datensicherung -->
+    <section id="tab-backup" class="hidden">
+      <div class="card">
+        <h2>Sicherung herunterladen</h2>
+        <p class="muted">Speichert die komplette Datenbank (Mitarbeiter, Gesichter, PINs, Zeiten) als Datei. Bewahre sie an einem sicheren Ort auf, z. B. in SharePoint oder OneDrive.</p>
+        <a class="btn primary" href="/api/admin/backup">Datensicherung herunterladen</a>
+      </div>
+
+      <div class="card">
+        <h2>Automatische Sicherung nach OneDrive</h2>
+        <div id="offsite-status"></div>
+
+        <div id="offsite-setup" class="hidden">
+          <p>Einmalig einrichten – danach lädt der Server jede Nacht eine Sicherung in deinen OneDrive-Ordner <b>Zeiterfassung-Backups</b> und löscht dort Sicherungen, die älter als 90 Tage sind.</p>
+          <ol>
+            <li>Auf deinem PC <a href="https://rclone.org/downloads/" target="_blank" rel="noopener">rclone herunterladen</a> (Windows: „Intel/AMD – 64 Bit“) und die ZIP-Datei entpacken.</li>
+            <li>Im entpackten Ordner mit <b>Umschalt + Rechtsklick → „In Terminal öffnen“</b> (bzw. PowerShell) ein Fenster öffnen und eingeben:<br>
+              <code>.\rclone.exe authorize "onedrive"</code></li>
+            <li>Im Browser mit deinem Microsoft-365-Konto anmelden und den Zugriff erlauben.</li>
+            <li>Im Fenster erscheint ein langer Text zwischen <code>---&gt;</code> und <code>&lt;---</code>. Diesen komplett kopieren und hier einfügen:</li>
+          </ol>
+          <textarea id="offsite-token" rows="4" style="width:100%;font-family:monospace" placeholder='{"access_token":"…"}'></textarea>
+          <p><button class="primary" id="btn-offsite-save">Verbinden</button></p>
+          <p class="muted">Erscheint bei der Anmeldung „Administratorgenehmigung erforderlich“, erlaubt eure Microsoft-365-Einstellung das nicht. Dann bitte euren Administrator, die App „rclone“ freizugeben – oder nutze den Download oben.</p>
+        </div>
+        <p class="error" id="offsite-error"></p>
+      </div>
     </section>
   </main>
 

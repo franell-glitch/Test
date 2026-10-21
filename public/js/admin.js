@@ -41,18 +41,19 @@ function fmtDuration(ms) {
 }
 
 // ---------- Anmeldung & Navigation ----------
+const TABS = ['users', 'report', 'backup'];
+
 function showLogin() {
   $('login').classList.remove('hidden');
   $('nav').classList.add('hidden');
-  $('tab-users').classList.add('hidden');
-  $('tab-report').classList.add('hidden');
+  TABS.forEach((t) => $('tab-' + t).classList.add('hidden'));
 }
 
 function showTab(name) {
   document.querySelectorAll('button.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
-  $('tab-users').classList.toggle('hidden', name !== 'users');
-  $('tab-report').classList.toggle('hidden', name !== 'report');
+  TABS.forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== name));
   if (name === 'report') loadReport();
+  if (name === 'backup') loadOffsite();
 }
 
 async function showApp() {
@@ -466,6 +467,64 @@ $('btn-entry-delete').onclick = async () => {
   }
 };
 $('btn-entry-cancel').onclick = () => entryDialog.close();
+
+// ---------- Datensicherung nach OneDrive ----------
+const fmtDateTime = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+
+function renderOffsite(st) {
+  $('offsite-setup').classList.toggle('hidden', st.configured);
+  if (!st.configured) {
+    $('offsite-status').innerHTML = '<p><span class="badge warn">nicht eingerichtet</span></p>';
+    return;
+  }
+  let last = '<span class="muted">Noch keine Sicherung hochgeladen.</span>';
+  if (st.last?.ok) last = `<span class="badge in">✔ zuletzt gesichert: ${fmtDateTime(st.last.time)}</span>`;
+  else if (st.last) last = `<span class="badge warn">Fehler am ${fmtDateTime(st.last.time)}</span> <span class="error">${esc(st.last.error)}</span>`;
+  $('offsite-status').innerHTML = `
+    <p><span class="badge in">verbunden</span> Ordner in OneDrive: <b>${esc(st.folder)}</b> · Aufbewahrung ${st.keepDays} Tage</p>
+    <p>${last}</p>
+    <p class="row">
+      <button class="primary" id="btn-offsite-run">Jetzt sichern</button>
+      <button class="danger" id="btn-offsite-remove">Verbindung trennen</button>
+    </p>`;
+  $('btn-offsite-run').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Sichere …';
+    $('offsite-error').textContent = '';
+    try {
+      renderOffsite(await api('/api/admin/offsite/run', { method: 'POST' }));
+    } catch (err) {
+      $('offsite-error').textContent = err.message;
+      loadOffsite();
+    }
+  };
+  $('btn-offsite-remove').onclick = async () => {
+    if (!confirm('Verbindung zu OneDrive trennen? Bereits hochgeladene Sicherungen bleiben in OneDrive erhalten.')) return;
+    renderOffsite(await api('/api/admin/offsite', { method: 'DELETE' }));
+  };
+}
+
+async function loadOffsite() {
+  $('offsite-error').textContent = '';
+  try {
+    renderOffsite(await api('/api/admin/offsite'));
+  } catch (err) {
+    $('offsite-error').textContent = err.message;
+  }
+}
+
+$('btn-offsite-save').onclick = async () => {
+  $('offsite-error').textContent = '';
+  try {
+    const r = await api('/api/admin/offsite', { method: 'POST', body: { token: $('offsite-token').value } });
+    $('offsite-token').value = '';
+    renderOffsite(r);
+    // Direkt eine erste Sicherung anstoßen, damit man sofort sieht, ob alles klappt
+    $('btn-offsite-run').click();
+  } catch (err) {
+    $('offsite-error').textContent = err.message;
+  }
+};
 
 // ---------- Start ----------
 initReportDates();

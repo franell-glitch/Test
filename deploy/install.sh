@@ -40,7 +40,7 @@ done
 
 log "Systempakete installieren"
 apt-get update -q
-apt-get install -y -q curl git sqlite3 ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
+apt-get install -y -q curl git sqlite3 unzip ca-certificates gnupg debian-keyring debian-archive-keyring apt-transport-https iptables-persistent
 
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]; then
   log "Node.js 22 installieren"
@@ -58,6 +58,11 @@ if ! command -v caddy >/dev/null; then
     rm -f /etc/apt/sources.list.d/caddy-stable.list
   fi
   apt-get install -y -q caddy
+fi
+
+if ! command -v rclone >/dev/null; then
+  log "rclone (für die Sicherung nach OneDrive) installieren"
+  curl -fsSL https://rclone.org/install.sh | bash || apt-get install -y -q rclone
 fi
 
 log "Benutzer und Verzeichnisse anlegen"
